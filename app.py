@@ -4,7 +4,7 @@ import pyrebase
 import json
 from firebase_admin import credentials, auth, firestore
 from flask import Flask, request
-import sys
+from functools import wraps
 
 #App configuration
 app = Flask(__name__)
@@ -17,13 +17,43 @@ db = firestore.client()
 client_ref = db.collection('Clients')
 user_ref = db.collection('users')
 
-#Data source
-users = [{'uid': 1, 'name': 'Noah Schairer'}]
-
-#Api route to get users
-@app.route('/api/userinfo')
-def userinfo():
-  return {'data': users}, 200
+def check_token(f):
+    @wraps(f)
+    def wrap(*args,**kwargs):
+        if not request.headers.get('authorization'):
+            return {'message': 'No token provided'}, 400
+        try:
+            user = auth.verify_id_token(request.headers['authorization'])
+            request.user = user
+        except:
+            return {'message':'Invalid token provided.'},400
+        return f(*args, **kwargs)
+    return wrap
+    
+@app.route('/api/poc', methods=['POST'])
+@check_token
+def add_poc():
+  try:
+    req_json = request.json
+    user = request.user
+    userId = user['user_id']
+    client_list = list(client_ref.where("userId", "==", userId).stream())
+    doc_ids = []
+    for doc in client_list:
+      doc_ids.append(doc.id)
+    client_id = doc_ids[0]
+    print(client_id)
+    guardian_collec = client_ref.document(client_id).collection('guardians')
+    guardians = req_json["guardians"]
+    for guardian in guardians:
+      guardian_collec.document().set({
+        "Name": guardian['name'],
+        "Email": guardian['email'],
+        "Phone": guardian['phone'],
+      })
+    return {'message': f'{user}'}, 200
+  except Exception as e:
+    return {'message': f'There was an POSTING {e}'}, 400
 
 #Api route to sign up a new user
 @app.route('/api/signup')
@@ -66,7 +96,7 @@ def token():
     jwt = user['idToken']
     return {'token': jwt}, 200
   except:
-    return {'message': 'There was an error logging in'},400
+    return {'message': 'There was an error logging'}, 400
 
 if __name__ == '__main__':
   app.run(debug=True)
