@@ -5,9 +5,22 @@ import json
 from firebase_admin import credentials, auth, firestore
 from flask import Flask, request
 from functools import wraps
+from flask_mail import Mail, Message
 
 #App configuration
 app = Flask(__name__)
+
+# initialize mail
+mail_settings = {
+  "MAIL_SERVER": 'smtp.gmail.com',
+  "MAIL_PORT": 465,
+  "MAIL_USE_TLS": False,
+  "MAIL_USE_SSL": True,
+  "MAIL_USERNAME": 'cha.cesium23@gmail.com',
+  "MAIL_PASSWORD": 'VelloreInstitute2023'
+}
+app.config.update(mail_settings)
+mail = Mail(app)
 
 #Connect to firebase
 cred = credentials.Certificate('fbAdminConfig.json')
@@ -53,7 +66,35 @@ def add_poc():
       })
     return {'message': f'{user}'}, 200
   except Exception as e:
-    return {'message': f'There was an POSTING {e}'}, 400
+    return {'message': f'There was an error in POSTING {e}'}, 400
+
+# Scan QR and send email
+@app.route('/api/scan/<id>')
+def scanQr(id):
+  email = request.form.get('email')
+  name = request.form.get('name')
+  phone = request.form.get('phone')
+  try:
+    guardian_docs_list = client_ref.document(id).collection('guardians').stream()
+    with mail.connect() as conn:
+      for guardian_doc in guardian_docs_list:
+        guardian = guardian_doc.to_dict()
+        msg = Message(
+          subject='Found your child!',
+          sender=app.config.get('MAIL_USERNAME'),
+          recipients=[guardian["Email"]], 
+          body=f'''Hi {(guardian["Name"])}. Someone has found your child! The details are given below. 
+                  Name: {name}
+                  Phone Number: {phone}
+                  Email: {email}
+                  Give them a call and get in touch with them!'''
+        )
+        conn.send(msg)
+
+    
+    return {'message': 'Sent the email'}, 200
+  except Exception as err:
+    return {'message': f'{err}'}, 400
 
 #Api route to sign up a new user
 @app.route('/api/signup')
